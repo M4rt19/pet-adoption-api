@@ -1,32 +1,56 @@
 package handlers
 
 import (
-    "net/http"
+	"net/http"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "pet-adoption-api/internal/models"
-    "pet-adoption-api/internal/repository"
+	"pet-adoption-api/internal/database"
+	"pet-adoption-api/internal/models"
+
+	"github.com/gin-gonic/gin"
 )
 
+// GET /shelters
 func GetShelters(c *gin.Context) {
-	shelters, err := repository.GetAllShelters()
-	if err != nil{
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return 
-	}
-	c.JSON(http.StatusOK, shelters)
-}
+	var shelters []models.Shelter
 
-func CreateShelter(c *gin.Context){
-	var shelter models.Shelter
-	if err := c.ShouldBindJSON(&shelter); err!= nil{
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := database.DB.Find(&shelters).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch shelters"})
 		return
 	}
-	if err := repository.CreateShelter(&shelter); err != nil{
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, shelter)
+
+	c.JSON(http.StatusOK, gin.H{"shelters": shelters})
 }
 
+type createShelterRequest struct {
+	Name    string `json:"name" binding:"required"`
+	Address string `json:"address"`
+	Phone   string `json:"phone"`
+	// Optional: owner_user_id; or we can assign current user if role == shelter
+	OwnerUserID uint `json:"owner_user_id" binding:"required"`
+}
+
+// POST /shelters  (admin only in routes)
+func CreateShelter(c *gin.Context) {
+	var req createShelterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	shelter := models.Shelter{
+		Name:        req.Name,
+		Address:     req.Address,
+		Phone:       req.Phone,
+		OwnerUserID: req.OwnerUserID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if err := database.DB.Create(&shelter).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create shelter"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"shelter": shelter})
+}

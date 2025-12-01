@@ -1,77 +1,115 @@
 package handlers
 
 import (
-    "net/http"
-    "time"
-    "pet-adoption-api/internal/models"
-    "pet-adoption-api/internal/repository"
+	"net/http"
+	"os"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "golang.org/x/crypto/bcrypt"
-    "github.com/golang-jwt/jwt/v5"
+	"pet-adoption-api/internal/auth"
+	"pet-adoption-api/internal/database"
+	"pet-adoption-api/internal/models"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtKey = []byte("SECRET_KEY") 
-func Register(c *gin.Context) {
-    var req models.User
+var jwtManager *auth.JWTManager
 
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-
-    hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-    req.Password = string(hash)
-    req.Role = "user" 
-
-    if err := repository.CreateUser(&req); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
-
-    c.JSON(http.StatusCreated, gin.H{"message": "User registered"})
+// InitAuth should be called from main AFTER env is loaded.
+func InitAuth() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		// dev default; in prod JWT_SECRET MUST be set
+		secret = "dev-secret"
+	}
+	jwtManager = auth.NewJWTManager(secret, 24*time.Hour)
 }
 
+type registerRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
+	Role     string `json:"role"` // optional; default = "user"
+}
+
+type loginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+// POST /auth/register
+func Register(c *gin.Context) {
+	var req registerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	role := models.RoleUser
+	if req.Role != "" {
+		role = models.Role(req.Role)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
+		return
+	}
+
+	user := models.User{
+		Name:         req.Name,
+		Email:        req.Email,
+		PasswordHash: string(hash),
+		Role:         role,
+	}
+
+	if err := database.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not create user (maybe email already used)"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"user": gin.H{
+			"id":    user.ID,
+			"name":  user.Name,
+			"email": user.Email,
+			"role":  user.Role,
+		},
+	})
+}
+
+// POST /auth/login
 func Login(c *gin.Context) {
-    var req struct {
-        Email    string `json:"email"`
-        Password string `json:"password"`
-    }
+	var req loginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
 
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
+	var user models.User
+	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
 
-    user, err := repository.GetUserByEmail(req.Email)
-    if err != nil {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
-        return
-    }
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
 
-    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
-        return
-    }
+	token, err := jwtManager.Generate(user.ID, string(user.Role))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
 
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-        "user_id": user.ID,
-        "role":    user.Role,
-        "exp":     time.Now().Add(24 * time.Hour).Unix(),
-    })
-
-    tokenString, err := token.SignedString(jwtKey)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
-        return
-    }
-
-    c.JSON(http.StatusOK, gin.H{
-        "token": tokenString,
-        "user": gin.H{
-            "id":    user.ID,
-            "email": user.Email,
-            "role":  user.Role,
-        },
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"user": gin.H{
+			"id":    user.ID,
+			"name":  user.Name,
+			"email": user.Email,
+			"role":  user.Role,
+		},
+	})
 }
