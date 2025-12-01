@@ -1,6 +1,3 @@
-✅ Here is the README without any code fences, no backticks, no escaping
-→ Just copy-paste EXACTLY this into README.md
-→ It will render perfectly on GitHub, VS Code, Goland, IntelliJ, GitLab, etc.
 🐾 Pet Adoption API
 A backend REST API built with Go, Gin, PostgreSQL, JWT Auth, and Docker for managing pets, shelters, and adoption requests.
 ✨ Overview
