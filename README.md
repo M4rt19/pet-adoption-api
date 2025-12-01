@@ -37,8 +37,8 @@ Register
 POST /auth/register
 Body:
 {
-"name": "Aida",
-"email": "aida@example.com",
+"name": " ",
+"email": " @example.com",
 "password": "1234"
 }
 Login
