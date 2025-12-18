@@ -11,11 +11,9 @@ import (
 	"pet-adoption-api/internal/database"
 	"pet-adoption-api/internal/handlers"
 	"pet-adoption-api/internal/middleware"
-    "pet-adoption-api/internal/models"
 	"pet-adoption-api/internal/worker"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -28,9 +26,6 @@ func main() {
 	// Init JWT managers for handlers + middleware
 	handlers.InitAuth()
 	middleware.InitAuthMiddleware()
-
-    // Temporary code to create users and shelters
-	createTestData()
 
 	// Create adoption worker with buffered channel
 	aw := worker.NewAdoptionWorker(100)
@@ -103,42 +98,4 @@ func main() {
 	}
 
 	// When r.Run exits, context will be cancelled by signal, worker stops via ctx
-}
-
-func createTestData() {
-	users := []models.User{
-		{Name: "Test User 1", Email: "user1@example.com", PasswordHash: "password", Role: "user"},
-		{Name: "Test User 2", Email: "user2@example.com", PasswordHash: "password", Role: "user"},
-		{Name: "Shelter Owner 1", Email: "shelter1@example.com", PasswordHash: "password", Role: "shelter"},
-		{Name: "Shelter Owner 2", Email: "shelter2@example.com", PasswordHash: "password", Role: "shelter"},
-	}
-
-	for _, user := range users {
-		hash, err := bcrypt.GenerateFromPassword([]byte(user.PasswordHash), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatalf("failed to hash password: %v", err)
-		}
-		user.PasswordHash = string(hash)
-		if err := database.DB.Create(&user).Error; err != nil {
-			log.Printf("could not create user %s: %v", user.Name, err)
-		}
-	}
-
-	var shelterOwner1 models.User
-	database.DB.Where("email = ?", "shelter1@example.com").First(&shelterOwner1)
-
-	var shelterOwner2 models.User
-	database.DB.Where("email = ?", "shelter2@example.com").First(&shelterOwner2)
-
-
-	shelters := []models.Shelter{
-		{Name: "Happy Paws Shelter", Address: "123 Main St", Phone: "555-1234", OwnerUserID: shelterOwner1.ID},
-		{Name: "Furry Friends Rescue", Address: "456 Oak Ave", Phone: "555-5678", OwnerUserID: shelterOwner2.ID},
-	}
-
-	for _, shelter := range shelters {
-		if err := database.DB.Create(&shelter).Error; err != nil {
-			log.Printf("could not create shelter %s: %v", shelter.Name, err)
-		}
-	}
 }
