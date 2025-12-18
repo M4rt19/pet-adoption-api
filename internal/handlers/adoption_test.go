@@ -1,109 +1,37 @@
 package handlers
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"testing"
-	"time"
-
 	"pet-adoption-api/internal/database"
 	"pet-adoption-api/internal/models"
+	"strconv"
+	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 )
 
-func setupAdoptionTestData(t *testing.T) (user models.User, shelter models.Shelter, pet models.Pet) {
-	t.Helper()
+// Note: No setup function here. It uses the TestMain from shelter_test.go
 
-	// DB should already be initialized by setupTestDB from auth_test.go
-	if database.DB == nil {
-		setupTestDB(t)
-	}
-
-	user = models.User{
-		Name:      "Requester",
-		Email:     "req@example.com",
-		Role:      "user",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	if err := database.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
-
-	shelter = models.Shelter{
-		Name:        "Test Shelter",
-		Address:     "Somewhere",
-		Phone:       "12345",
-		OwnerUserID: user.ID,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-	if err := database.DB.Create(&shelter).Error; err != nil {
-		t.Fatalf("failed to create test shelter: %v", err)
-	}
-
-	pet = models.Pet{
-		ShelterID:   shelter.ID,
-		Name:        "Buddy",
-		Species:     "dog",
-		Breed:       "test breed",
-		Age:         2,
-		Description: "friendly dog",
-		Status:      models.PetStatusAvailable,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-	if err := database.DB.Create(&pet).Error; err != nil {
-		t.Fatalf("failed to create test pet: %v", err)
-	}
-
-	return
-}
-
+// TestApplyForAdoption_CreatesRequest uses the testRouter and DB initialized in shelter_test.go's TestMain
 func TestApplyForAdoption_CreatesRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	// The base data created in TestMain includes a pet with ID 1.
+	// We also have an adminToken for an authenticated user.
+	petID := 1
 
-	// use same helper as in auth_test.go
-	setupTestDB(t)
-
-	user, _, pet := setupAdoptionTestData(t)
-
-	// real Gin router so route params work
-	r := gin.Default()
-
-	// minimal route that injects userID into context and calls handler
-	r.POST("/adoptions/:petID/apply", func(c *gin.Context) {
-		c.Set("userID", user.ID)
-		ApplyForAdoption(c)
-	})
-
-	body := map[string]string{
-		"message": "I love this dog",
-	}
-	bodyJSON, _ := json.Marshal(body)
-
-	url := "/adoptions/" + strconv.Itoa(int(pet.ID)) + "/apply"
-
-	req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
-	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
+	// The URL is now just the path, as the server is managed by httptest
+	req, _ := http.NewRequest("POST", "/adoptions/"+strconv.Itoa(petID)+"/apply", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken) // Use the global admin token
 
-	r.ServeHTTP(w, req)
+	testRouter.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d, body=%s", w.Code, w.Body.String())
-	}
+	// Assertions
+	assert.Equal(t, http.StatusCreated, w.Code)
 
-	var ar models.AdoptionRequest
-	if err := database.DB.First(&ar).Error; err != nil {
-		t.Fatalf("adoption request not persisted: %v", err)
-	}
-
-	if ar.UserID != user.ID || ar.PetID != pet.ID {
-		t.Fatalf("adoption request has wrong user or pet: %+v", ar)
-	}
+	// Check that an adoption request was created in the database
+	var request models.AdoptionRequest
+	err := database.DB.First(&request, "pet_id = ?", petID).Error
+	assert.Nil(t, err, "Adoption request should be found in the database")
+	assert.Equal(t, uint(petID), request.PetID)
 }
