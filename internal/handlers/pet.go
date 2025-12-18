@@ -35,6 +35,24 @@ func GetPets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"pets": pets})
 }
 
+// GET /pets/:id
+func GetPetByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pet id"})
+		return
+	}
+
+	var pet models.Pet
+	if err := database.DB.First(&pet, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "pet not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"pet": pet})
+}
+
 type createPetRequest struct {
 	ShelterID   uint   `json:"shelter_id" binding:"required"`
 	Name        string `json:"name" binding:"required"`
@@ -78,6 +96,54 @@ func CreatePet(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{"pet": pet})
 }
+
+type updatePetRequest struct {
+	Name        string `json:"name"`
+	Species     string `json:"species"`
+	Breed       string `json:"breed"`
+	Age         int    `json:"age"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+}
+
+// PUT /pets/:id
+func UpdatePet(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pet id"})
+		return
+	}
+
+	var pet models.Pet
+	if err := database.DB.First(&pet, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "pet not found"})
+		return
+	}
+
+	var req updatePetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	// Update fields from request
+	pet.Name = req.Name
+	pet.Species = req.Species
+	pet.Breed = req.Breed
+	pet.Age = req.Age
+	pet.Description = req.Description
+	pet.Status = models.PetStatus(req.Status)
+	pet.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(&pet).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update pet"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"pet": pet})
+}
+
 
 // DELETE /pets/:id
 func DeletePet(c *gin.Context) {

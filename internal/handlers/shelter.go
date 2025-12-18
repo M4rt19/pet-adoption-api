@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"pet-adoption-api/internal/database"
@@ -20,6 +21,24 @@ func GetShelters(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"shelters": shelters})
+}
+
+// GET /shelters/:id
+func GetShelterByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid shelter id"})
+		return
+	}
+
+	var shelter models.Shelter
+	if err := database.DB.First(&shelter, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "shelter not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"shelter": shelter})
 }
 
 type createShelterRequest struct {
@@ -53,4 +72,45 @@ func CreateShelter(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"shelter": shelter})
+}
+
+type updateShelterRequest struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Phone   string `json:"phone"`
+}
+
+// PUT /shelters/:id
+func UpdateShelter(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid shelter id"})
+		return
+	}
+
+	var shelter models.Shelter
+	if err := database.DB.First(&shelter, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "shelter not found"})
+		return
+	}
+
+	var req updateShelterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	// Update fields from request
+	shelter.Name = req.Name
+	shelter.Address = req.Address
+	shelter.Phone = req.Phone
+	shelter.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(&shelter).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update shelter"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"shelter": shelter})
 }
