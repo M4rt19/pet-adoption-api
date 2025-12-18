@@ -114,3 +114,20 @@ func UpdateShelter(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"shelter": shelter})
 }
+
+// DELETE /shelters/:id
+func DeleteShelter(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid shelter id"})
+		return
+	}
+
+	if err := database.DB.Delete(&models.Shelter{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete shelter"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "shelter deleted successfully"})
+}

@@ -67,6 +67,7 @@ func main() {
 		shelterRoutes.GET("/:id", handlers.GetShelterByID)
 		shelterRoutes.POST("/", middleware.AuthMiddleware(), middleware.AdminOnly(), handlers.CreateShelter)
 		shelterRoutes.PUT("/:id", middleware.AuthMiddleware(), middleware.AdminOnly(), handlers.UpdateShelter)
+		shelterRoutes.DELETE("/:id", middleware.AuthMiddleware(), middleware.AdminOnly(), handlers.DeleteShelter) // I've added this line
 	}
 
 	// Adoption routes (protected)
